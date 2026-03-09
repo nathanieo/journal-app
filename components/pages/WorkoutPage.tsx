@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { PageHeader } from '../ui/page-header'
-import { Card, CardHeader, CardContent, CardTitle } from '../ui/card'
+import { Card } from '../ui/card'
 import { Button } from '../ui/button'
-import { Input } from '../ui/input'
 import { cn } from '@/lib/utils'
 import { progressHex } from '../ui/progress'
 
@@ -33,6 +32,9 @@ export interface WorkoutLog {
   exercises: Exercise[]
   notes?: string
   durationMins?: number
+  completed?: boolean    // NEW — true once user hits "Finish Workout"
+  completedAt?: string   // NEW — ISO timestamp
+  effort?: number        // NEW — 1–5 rating
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ export interface WorkoutLog {
 
 export interface ExerciseDef {
   name: string
-  muscleGroup: string    // primary
+  muscleGroup: string
   equipment: string
   tags?: string[]
 }
@@ -51,71 +53,69 @@ const LIBRARY: ExerciseDef[] = [
   { name: 'Bench Press',            muscleGroup: 'Chest',     equipment: 'Barbell' },
   { name: 'Incline Bench Press',    muscleGroup: 'Chest',     equipment: 'Barbell' },
   { name: 'Decline Bench Press',    muscleGroup: 'Chest',     equipment: 'Barbell' },
-  { name: 'Dumbbell Press',         muscleGroup: 'Chest',     equipment: 'Dumbbell' },
-  { name: 'Incline Dumbbell Press', muscleGroup: 'Chest',     equipment: 'Dumbbell' },
   { name: 'Dumbbell Fly',           muscleGroup: 'Chest',     equipment: 'Dumbbell' },
   { name: 'Cable Fly',              muscleGroup: 'Chest',     equipment: 'Cable' },
-  { name: 'Push Up',                muscleGroup: 'Chest',     equipment: 'Bodyweight' },
-  { name: 'Dips',                   muscleGroup: 'Chest',     equipment: 'Bodyweight' },
+  { name: 'Push-Up',                muscleGroup: 'Chest',     equipment: 'Bodyweight' },
+  { name: 'Chest Dip',              muscleGroup: 'Chest',     equipment: 'Bodyweight' },
   { name: 'Pec Deck',               muscleGroup: 'Chest',     equipment: 'Machine' },
+  { name: 'Dumbbell Press',         muscleGroup: 'Chest',     equipment: 'Dumbbell' },
   // ── Back ───────────────────────────────────────
+  { name: 'Pull-Up',                muscleGroup: 'Back',      equipment: 'Bodyweight' },
+  { name: 'Chin-Up',                muscleGroup: 'Back',      equipment: 'Bodyweight' },
+  { name: 'Barbell Row',            muscleGroup: 'Back',      equipment: 'Barbell' },
+  { name: 'Dumbbell Row',           muscleGroup: 'Back',      equipment: 'Dumbbell' },
+  { name: 'Seated Cable Row',       muscleGroup: 'Back',      equipment: 'Cable' },
+  { name: 'Lat Pulldown',           muscleGroup: 'Back',      equipment: 'Cable' },
+  { name: 'T-Bar Row',              muscleGroup: 'Back',      equipment: 'Barbell' },
+  { name: 'Face Pull',              muscleGroup: 'Back',      equipment: 'Cable' },
   { name: 'Deadlift',               muscleGroup: 'Back',      equipment: 'Barbell' },
   { name: 'Romanian Deadlift',      muscleGroup: 'Back',      equipment: 'Barbell' },
-  { name: 'Barbell Row',            muscleGroup: 'Back',      equipment: 'Barbell' },
-  { name: 'T-Bar Row',              muscleGroup: 'Back',      equipment: 'Barbell' },
-  { name: 'Pull Up',                muscleGroup: 'Back',      equipment: 'Bodyweight' },
-  { name: 'Chin Up',                muscleGroup: 'Back',      equipment: 'Bodyweight' },
-  { name: 'Lat Pulldown',           muscleGroup: 'Back',      equipment: 'Cable' },
-  { name: 'Seated Cable Row',       muscleGroup: 'Back',      equipment: 'Cable' },
-  { name: 'Single Arm Dumbbell Row',muscleGroup: 'Back',      equipment: 'Dumbbell' },
-  { name: 'Face Pull',              muscleGroup: 'Back',      equipment: 'Cable' },
-  { name: 'Rack Pull',              muscleGroup: 'Back',      equipment: 'Barbell' },
+  { name: 'Good Morning',           muscleGroup: 'Back',      equipment: 'Barbell' },
   // ── Legs ───────────────────────────────────────
   { name: 'Squat',                  muscleGroup: 'Legs',      equipment: 'Barbell' },
   { name: 'Front Squat',            muscleGroup: 'Legs',      equipment: 'Barbell' },
   { name: 'Leg Press',              muscleGroup: 'Legs',      equipment: 'Machine' },
   { name: 'Hack Squat',             muscleGroup: 'Legs',      equipment: 'Machine' },
-  { name: 'Bulgarian Split Squat',  muscleGroup: 'Legs',      equipment: 'Dumbbell' },
-  { name: 'Lunges',                 muscleGroup: 'Legs',      equipment: 'Dumbbell' },
-  { name: 'Leg Curl',               muscleGroup: 'Legs',      equipment: 'Machine' },
   { name: 'Leg Extension',          muscleGroup: 'Legs',      equipment: 'Machine' },
+  { name: 'Leg Curl',               muscleGroup: 'Legs',      equipment: 'Machine' },
+  { name: 'Lunge',                  muscleGroup: 'Legs',      equipment: 'Dumbbell' },
+  { name: 'Bulgarian Split Squat',  muscleGroup: 'Legs',      equipment: 'Dumbbell' },
   { name: 'Calf Raise',             muscleGroup: 'Legs',      equipment: 'Machine' },
-  { name: 'Seated Calf Raise',      muscleGroup: 'Legs',      equipment: 'Machine' },
   { name: 'Hip Thrust',             muscleGroup: 'Legs',      equipment: 'Barbell' },
-  { name: 'Good Morning',           muscleGroup: 'Legs',      equipment: 'Barbell' },
+  { name: 'Glute Bridge',           muscleGroup: 'Legs',      equipment: 'Bodyweight' },
+  { name: 'Step-Up',                muscleGroup: 'Legs',      equipment: 'Dumbbell' },
   // ── Shoulders ──────────────────────────────────
   { name: 'Overhead Press',         muscleGroup: 'Shoulders', equipment: 'Barbell' },
-  { name: 'Seated Dumbbell Press',  muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
+  { name: 'Dumbbell Shoulder Press',muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
   { name: 'Arnold Press',           muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
   { name: 'Lateral Raise',          muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
-  { name: 'Cable Lateral Raise',    muscleGroup: 'Shoulders', equipment: 'Cable' },
   { name: 'Front Raise',            muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
+  { name: 'Cable Lateral Raise',    muscleGroup: 'Shoulders', equipment: 'Cable' },
   { name: 'Rear Delt Fly',          muscleGroup: 'Shoulders', equipment: 'Dumbbell' },
   { name: 'Upright Row',            muscleGroup: 'Shoulders', equipment: 'Barbell' },
-  { name: 'Shrugs',                 muscleGroup: 'Shoulders', equipment: 'Barbell' },
+  { name: 'Shrug',                  muscleGroup: 'Shoulders', equipment: 'Barbell' },
   // ── Arms ───────────────────────────────────────
   { name: 'Barbell Curl',           muscleGroup: 'Arms',      equipment: 'Barbell' },
   { name: 'Dumbbell Curl',          muscleGroup: 'Arms',      equipment: 'Dumbbell' },
   { name: 'Hammer Curl',            muscleGroup: 'Arms',      equipment: 'Dumbbell' },
-  { name: 'Preacher Curl',          muscleGroup: 'Arms',      equipment: 'Barbell' },
   { name: 'Cable Curl',             muscleGroup: 'Arms',      equipment: 'Cable' },
+  { name: 'Preacher Curl',          muscleGroup: 'Arms',      equipment: 'Machine' },
   { name: 'Concentration Curl',     muscleGroup: 'Arms',      equipment: 'Dumbbell' },
   { name: 'Tricep Pushdown',        muscleGroup: 'Arms',      equipment: 'Cable' },
-  { name: 'Overhead Tricep Extension', muscleGroup: 'Arms',   equipment: 'Cable' },
   { name: 'Skull Crusher',          muscleGroup: 'Arms',      equipment: 'Barbell' },
-  { name: 'Close Grip Bench Press', muscleGroup: 'Arms',      equipment: 'Barbell' },
-  { name: 'Tricep Kickback',        muscleGroup: 'Arms',      equipment: 'Dumbbell' },
-  { name: 'Diamond Push Up',        muscleGroup: 'Arms',      equipment: 'Bodyweight' },
+  { name: 'Overhead Tricep Ext.',   muscleGroup: 'Arms',      equipment: 'Dumbbell' },
+  { name: 'Dips',                   muscleGroup: 'Arms',      equipment: 'Bodyweight' },
+  { name: 'Close-Grip Bench',       muscleGroup: 'Arms',      equipment: 'Barbell' },
   // ── Core ───────────────────────────────────────
   { name: 'Plank',                  muscleGroup: 'Core',      equipment: 'Bodyweight' },
-  { name: 'Side Plank',             muscleGroup: 'Core',      equipment: 'Bodyweight' },
   { name: 'Crunch',                 muscleGroup: 'Core',      equipment: 'Bodyweight' },
-  { name: 'Hanging Leg Raise',      muscleGroup: 'Core',      equipment: 'Bodyweight' },
-  { name: 'Ab Wheel Rollout',       muscleGroup: 'Core',      equipment: 'Equipment' },
+  { name: 'Leg Raise',              muscleGroup: 'Core',      equipment: 'Bodyweight' },
   { name: 'Russian Twist',          muscleGroup: 'Core',      equipment: 'Bodyweight' },
   { name: 'Cable Crunch',           muscleGroup: 'Core',      equipment: 'Cable' },
-  { name: 'Dragon Flag',            muscleGroup: 'Core',      equipment: 'Bodyweight' },
-  { name: 'Pallof Press',           muscleGroup: 'Core',      equipment: 'Cable' },
+  { name: 'Ab Wheel Rollout',       muscleGroup: 'Core',      equipment: 'Equipment' },
+  { name: 'Hanging Leg Raise',      muscleGroup: 'Core',      equipment: 'Bodyweight' },
+  { name: 'Side Plank',             muscleGroup: 'Core',      equipment: 'Bodyweight' },
+  { name: 'Mountain Climber',       muscleGroup: 'Core',      equipment: 'Bodyweight' },
   { name: 'V-Up',                   muscleGroup: 'Core',      equipment: 'Bodyweight' },
   // ── Cardio ─────────────────────────────────────
   { name: 'Running',                muscleGroup: 'Cardio',    equipment: 'None' },
@@ -146,14 +146,12 @@ function saveLogs(logs: WorkoutLog[]) {
   localStorage.setItem('workout_v3', JSON.stringify(logs))
 }
 
-// Get the date string for exactly N days ago
 function daysAgo(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() - n)
   return d.toISOString().split('T')[0]
 }
 
-// Get most-recent exercises across all logs (deduplicated, most recent first)
 function getRecentExercises(logs: WorkoutLog[], today: string, limit = 8): ExerciseDef[] {
   const seen = new Set<string>()
   const result: ExerciseDef[] = []
@@ -175,7 +173,6 @@ function getRecentExercises(logs: WorkoutLog[], today: string, limit = 8): Exerc
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────────
 
-// Pill-style muscle group badge
 function MuscleTag({ group }: { group: string }) {
   const colors: Record<string, string> = {
     Chest:     'bg-blue-50 text-blue-600 border-blue-100',
@@ -194,7 +191,6 @@ function MuscleTag({ group }: { group: string }) {
   )
 }
 
-// Single exercise card in the workout log
 function ExerciseCard({
   ex, lastEx, onUpdateSet, onAddSet, onRemoveSet, onRemove,
 }: {
@@ -243,7 +239,6 @@ function ExerciseCard({
       </div>
 
       <div className="px-5 pt-2 pb-4">
-        {/* Header row */}
         <div className="grid grid-cols-[32px_1fr_76px_76px_60px_24px] gap-2 py-2 border-b border-paper-3 mb-1">
           {['#', 'Previous', 'Weight', 'Reps', 'Unit', ''].map((h, i) => (
             <span key={i} className="font-mono text-2xs text-fog uppercase tracking-widest">{h}</span>
@@ -269,11 +264,9 @@ function ExerciseCard({
               >
                 {set.done ? '✓' : si + 1}
               </button>
-
               <span className="font-mono text-2xs text-fog truncate">
                 {lastSet ? `${lastSet.weight}${lastSet.unit} × ${lastSet.reps}` : '—'}
               </span>
-
               <input
                 type="number"
                 value={set.weight || ''}
@@ -320,144 +313,6 @@ function ExerciseCard({
   )
 }
 
-// Search + filter panel for exercise library
-function ExercisePicker({ onAdd, alreadyAdded }: {
-  onAdd: (def: ExerciseDef) => void
-  alreadyAdded: string[]
-}) {
-  const [query, setQuery] = useState('')
-  const [muscle, setMuscle] = useState('All')
-  const [equipment, setEquipment] = useState('All')
-  const searchRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { searchRef.current?.focus() }, [])
-
-  const results = useMemo(() => {
-    return LIBRARY.filter(ex => {
-      const matchQ = !query || ex.name.toLowerCase().includes(query.toLowerCase())
-      const matchM = muscle === 'All' || ex.muscleGroup === muscle
-      const matchE = equipment === 'All' || ex.equipment === equipment
-      return matchQ && matchM && matchE
-    })
-  }, [query, muscle, equipment])
-
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Search bar */}
-      <div className="relative">
-        <svg viewBox="0 0 16 16" className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 fill-fog pointer-events-none">
-          <path d="M6.5 1a5.5 5.5 0 104.39 8.83l3.14 3.14a.75.75 0 001.06-1.06l-3.14-3.14A5.5 5.5 0 006.5 1zm-4 5.5a4 4 0 118 0 4 4 0 01-8 0z"/>
-        </svg>
-        <input
-          ref={searchRef}
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search exercises..."
-          className="w-full pl-9 pr-4 py-2.5 font-sans text-sm bg-pure-white border border-smoke rounded-sm text-ink placeholder:text-fog focus:outline-none focus:border-ink transition-colors"
-        />
-        {query && (
-          <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-fog hover:text-ink font-mono text-base">×</button>
-        )}
-      </div>
-
-      {/* Filter chips */}
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-1.5 flex-wrap">
-          {MUSCLE_GROUPS.map(g => (
-            <button key={g} onClick={() => setMuscle(g)}
-              className={cn(
-                'font-mono text-2xs px-2.5 py-1 border rounded-sm cursor-pointer transition-all duration-150',
-                muscle === g ? 'bg-ink text-paper border-ink' : 'bg-transparent text-ash border-smoke hover:border-ink hover:text-ink'
-              )}>
-              {g}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {EQUIPMENT_TYPES.map(e => (
-            <button key={e} onClick={() => setEquipment(e)}
-              className={cn(
-                'font-mono text-2xs px-2.5 py-1 border rounded-sm cursor-pointer transition-all duration-150',
-                equipment === e ? 'bg-ash text-paper border-ash' : 'bg-transparent text-fog border-paper-3 hover:border-smoke hover:text-ash'
-              )}>
-              {e}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Results */}
-      <div className="max-h-64 overflow-y-auto -mx-1 px-1">
-        {results.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="font-sans text-sm text-fog">No exercises found.</p>
-            <p className="font-mono text-2xs text-smoke mt-1">Try a different filter or add custom below.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-1.5">
-            {results.map(def => {
-              const added = alreadyAdded.includes(def.name)
-              return (
-                <button
-                  key={def.name}
-                  onClick={() => !added && onAdd(def)}
-                  disabled={added}
-                  className={cn(
-                    'flex items-start justify-between gap-2 px-3 py-2.5 border rounded-sm text-left transition-all duration-150',
-                    added
-                      ? 'border-paper-3 bg-paper-3/50 cursor-default'
-                      : 'border-paper-3 bg-pure-white hover:border-ink hover:bg-ink hover:text-paper group cursor-pointer'
-                  )}
-                >
-                  <div>
-                    <p className={cn('font-sans text-xs font-medium leading-tight', added ? 'text-fog' : 'text-ink group-hover:text-paper')}>
-                      {def.name}
-                    </p>
-                    <p className={cn('font-mono text-2xs mt-0.5', added ? 'text-smoke' : 'text-fog group-hover:text-paper/60')}>
-                      {def.equipment}
-                    </p>
-                  </div>
-                  {added
-                    ? <span className="font-mono text-2xs text-smoke flex-shrink-0 mt-0.5">Added</span>
-                    : <span className="font-mono text-sm text-fog group-hover:text-paper flex-shrink-0">+</span>
-                  }
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Custom exercise */}
-      <div className="pt-3 border-t border-paper-3">
-        <CustomExerciseInput onAdd={name => onAdd({ name, muscleGroup: 'Other', equipment: 'Other' })} />
-      </div>
-    </div>
-  )
-}
-
-function CustomExerciseInput({ onAdd }: { onAdd: (name: string) => void }) {
-  const [val, setVal] = useState('')
-  function submit() {
-    if (!val.trim()) return
-    onAdd(val.trim())
-    setVal('')
-  }
-  return (
-    <div className="flex gap-2">
-      <input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && submit()}
-        placeholder="Custom exercise name..."
-        className="flex-1 font-sans text-sm bg-transparent border-b border-smoke outline-none px-0 py-1.5 text-ink placeholder:text-fog focus:border-ink transition-colors"
-      />
-      <Button variant="ghost" size="sm" onClick={submit}>Add</Button>
-    </div>
-  )
-}
-
-// Last week suggestion banner
 function LastWeekSuggestion({
   lastWeekLog, todayExerciseNames, onAddAll, onAddOne,
 }: {
@@ -466,61 +321,57 @@ function LastWeekSuggestion({
   onAddAll: (exercises: Exercise[]) => void
   onAddOne: (ex: Exercise) => void
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [open, setOpen] = useState(false)
   if (!lastWeekLog || lastWeekLog.exercises.length === 0) return null
-
-  const unadded = lastWeekLog.exercises.filter(ex => !todayExerciseNames.includes(ex.name))
-  if (unadded.length === 0) return null
-
-  const dayName = new Date(lastWeekLog.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' })
-  const shortDate = new Date(lastWeekLog.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const unmatched = lastWeekLog.exercises.filter(ex => !todayExerciseNames.includes(ex.name))
+  if (unmatched.length === 0) return null
 
   return (
-    <div className="mb-6 border border-ink/10 bg-ink/[0.02] rounded-sm overflow-hidden">
-      {/* Header */}
+    <div className="mb-6 border border-paper-3 rounded-sm bg-pure-white overflow-hidden">
       <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-ink/[0.03] transition-colors"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-paper transition-colors"
       >
-        <div className="flex items-center gap-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-ink flex-shrink-0" />
-          <div className="text-left">
-            <p className="font-mono text-2xs tracking-widest uppercase text-ink">Last {dayName}</p>
-            <p className="font-mono text-2xs text-fog mt-0.5">{shortDate} · {lastWeekLog.name} · {lastWeekLog.exercises.length} exercises</p>
-          </div>
+        <div>
+          <p className="font-mono text-2xs tracking-widest uppercase text-fog">Repeat from last {new Date(lastWeekLog.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' })}</p>
+          <p className="font-sans text-xs text-ash mt-0.5">{lastWeekLog.name} · {lastWeekLog.exercises.length} exercises</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={e => { e.stopPropagation(); onAddAll(unadded) }}
+          <button
+            onClick={e => { e.stopPropagation(); onAddAll(lastWeekLog.exercises) }}
+            className="font-mono text-2xs px-3 py-1.5 bg-ink text-paper rounded-sm hover:bg-ink-3 transition-colors"
           >
-            Copy All ({unadded.length})
-          </Button>
-          <span className={cn('font-mono text-2xs text-fog transition-transform duration-200', !expanded && '-rotate-90')}>▼</span>
+            Copy All
+          </button>
+          <span className="font-mono text-lg text-fog">{open ? '−' : '+'}</span>
         </div>
       </button>
 
-      {/* Exercise list */}
-      {expanded && (
-        <div className="px-5 pb-4 grid grid-cols-2 gap-2 border-t border-ink/5">
-          {unadded.map(ex => {
-            const vol = totalVol(ex)
+      {open && (
+        <div className="border-t border-paper-3 divide-y divide-paper-3">
+          {lastWeekLog.exercises.map(ex => {
+            const already = todayExerciseNames.includes(ex.name)
             const best = maxW(ex)
+            const vol = totalVol(ex)
             return (
               <button
                 key={ex.id}
-                onClick={() => onAddOne(ex)}
-                className="flex items-start justify-between gap-2 p-3 bg-pure-white border border-paper-3 rounded-sm text-left hover:border-ink hover:bg-ink hover:text-paper group transition-all duration-150"
+                onClick={() => !already && onAddOne(ex)}
+                disabled={already}
+                className={cn(
+                  'w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors',
+                  already ? 'opacity-40 cursor-default' : 'hover:bg-paper cursor-pointer'
+                )}
               >
-                <div>
-                  <p className="font-sans text-xs font-medium text-ink group-hover:text-paper leading-tight">{ex.name}</p>
-                  <p className="font-mono text-2xs text-fog group-hover:text-paper/60 mt-0.5">
-                    {ex.sets.length} sets · {best > 0 ? `${best}${ex.sets[0]?.unit}` : '—'}
-                    {vol > 0 && ` · ${vol} vol`}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <MuscleTag group={ex.muscleGroup} />
+                  <span className="font-sans text-xs font-medium text-ink">{ex.name}</span>
                 </div>
-                <span className="font-mono text-sm text-fog group-hover:text-paper flex-shrink-0">+</span>
+                <div className="text-right">
+                  <p className="font-mono text-2xs text-ash">{best > 0 ? `${best}${ex.sets[0]?.unit}` : '—'}</p>
+                  {vol > 0 && <p className="font-mono text-2xs text-fog">{vol} vol</p>}
+                </div>
+                <span className="font-mono text-sm text-fog ml-4">{already ? '✓' : '+'}</span>
               </button>
             )
           })}
@@ -530,7 +381,6 @@ function LastWeekSuggestion({
   )
 }
 
-// Recent exercises quick-add strip
 function RecentExercises({
   recents, todayExerciseNames, onAdd,
 }: {
@@ -562,6 +412,331 @@ function RecentExercises({
   )
 }
 
+function ExercisePicker({
+  alreadyAdded, onAdd, onClose,
+}: {
+  alreadyAdded: string[]
+  onAdd: (def: ExerciseDef) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const [muscle, setMuscle] = useState('All')
+  const [equipment, setEquipment] = useState('All')
+  const [customName, setCustomName] = useState('')
+
+  const results = useMemo(() => {
+    return LIBRARY.filter(d => {
+      const matchSearch = !search || d.name.toLowerCase().includes(search.toLowerCase())
+      const matchMuscle = muscle === 'All' || d.muscleGroup === muscle
+      const matchEquip  = equipment === 'All' || d.equipment === equipment
+      return matchSearch && matchMuscle && matchEquip
+    })
+  }, [search, muscle, equipment])
+
+  function addCustom() {
+    if (!customName.trim()) return
+    onAdd({ name: customName.trim(), muscleGroup: muscle !== 'All' ? muscle : 'Other', equipment: equipment !== 'All' ? equipment : 'Other' })
+    setCustomName('')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-pure-white border border-paper-3 rounded-md shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-paper-3 flex items-center justify-between">
+          <p className="font-display font-bold text-sm text-ink">Exercise Library</p>
+          <button onClick={onClose} className="font-mono text-lg text-fog hover:text-ink transition-colors">×</button>
+        </div>
+
+        <div className="px-5 pt-4 pb-3 border-b border-paper-3 space-y-3">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Search exercises..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full font-sans text-sm bg-paper border border-smoke rounded-sm px-3 py-2 outline-none focus:border-ink transition-colors"
+          />
+          <div className="flex gap-1.5 flex-wrap">
+            {MUSCLE_GROUPS.map(g => (
+              <button key={g} onClick={() => setMuscle(g)}
+                className={cn(
+                  'font-mono text-2xs px-2.5 py-1 border rounded-sm cursor-pointer transition-all duration-150',
+                  muscle === g ? 'bg-ink text-paper border-ink' : 'bg-transparent text-ash border-smoke hover:border-ink hover:text-ink'
+                )}>
+                {g}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {EQUIPMENT_TYPES.map(e => (
+              <button key={e} onClick={() => setEquipment(e)}
+                className={cn(
+                  'font-mono text-2xs px-2.5 py-1 border rounded-sm cursor-pointer transition-all duration-150',
+                  equipment === e ? 'bg-ash text-paper border-ash' : 'bg-transparent text-fog border-paper-3 hover:border-smoke hover:text-ash'
+                )}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {results.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="font-sans text-sm text-fog">No exercises found.</p>
+              <p className="font-mono text-2xs text-smoke mt-1">Try a different filter or add custom below.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5">
+              {results.map(def => {
+                const added = alreadyAdded.includes(def.name)
+                return (
+                  <button
+                    key={def.name}
+                    onClick={() => !added && onAdd(def)}
+                    disabled={added}
+                    className={cn(
+                      'flex items-start justify-between gap-2 px-3 py-2.5 border rounded-sm text-left transition-all duration-150',
+                      added
+                        ? 'border-paper-3 bg-paper-3/50 cursor-default'
+                        : 'border-paper-3 bg-pure-white hover:border-ink hover:bg-ink hover:text-paper group cursor-pointer'
+                    )}
+                  >
+                    <div>
+                      <p className={cn('font-sans text-xs font-medium leading-tight', added ? 'text-fog' : 'text-ink group-hover:text-paper')}>
+                        {def.name}
+                      </p>
+                      <p className={cn('font-mono text-2xs mt-0.5', added ? 'text-smoke' : 'text-fog group-hover:text-paper/60')}>
+                        {def.equipment}
+                      </p>
+                    </div>
+                    {added
+                      ? <span className="font-mono text-2xs text-fog flex-shrink-0 mt-0.5">✓</span>
+                      : <span className="font-mono text-sm text-fog group-hover:text-paper flex-shrink-0">+</span>
+                    }
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-paper-3 flex gap-2">
+          <input
+            type="text"
+            placeholder="Or add a custom exercise..."
+            value={customName}
+            onChange={e => setCustomName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addCustom() }}
+            className="flex-1 font-sans text-sm bg-paper border border-smoke rounded-sm px-3 py-2 outline-none focus:border-ink transition-colors"
+          />
+          <Button size="sm" onClick={addCustom} disabled={!customName.trim()}>Add</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FINISH WORKOUT MODAL
+// ─────────────────────────────────────────────────────────────────
+
+function FinishWorkoutModal({
+  log,
+  durationMins,
+  onConfirm,
+  onClose,
+}: {
+  log: WorkoutLog
+  durationMins: number
+  onConfirm: (effort: number, notes: string) => void
+  onClose: () => void
+}) {
+  const [effort, setEffort] = useState(3)
+  const [notes, setNotes] = useState(log.notes || '')
+
+  const totalVolume = log.exercises.reduce((s, ex) => s + totalVol(ex), 0)
+  const totalSets   = log.exercises.reduce((s, ex) => s + ex.sets.length, 0)
+  const doneSets    = log.exercises.reduce((s, ex) => s + ex.sets.filter(set => set.done).length, 0)
+  const muscleGroups = [...new Set(log.exercises.map(ex => ex.muscleGroup))]
+
+  // Detect PRs: exercises where current max weight > 0 (simplified — would compare vs history in a full impl)
+  const prs = log.exercises.filter(ex => {
+    const best = maxW(ex)
+    return best > 0 && ex.sets.some(s => s.done)
+  })
+
+  const effortLabels: Record<number, string> = {
+    1: 'Easy',
+    2: 'Moderate',
+    3: 'Good',
+    4: 'Hard',
+    5: 'Max effort',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-pure-white border border-paper-3 rounded-md shadow-2xl w-full max-w-md overflow-hidden animate-fade-up"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-5 bg-ink text-paper">
+          <p className="font-mono text-2xs tracking-widest uppercase text-white/40 mb-1">Workout Complete</p>
+          <p className="font-display font-bold text-xl">{log.name}</p>
+        </div>
+
+        {/* Stats summary */}
+        <div className="grid grid-cols-3 divide-x divide-paper-3 border-b border-paper-3">
+          <div className="px-5 py-4 text-center">
+            <p className="font-display font-bold text-2xl text-ink">{durationMins}<span className="text-sm font-sans text-fog ml-1">min</span></p>
+            <p className="font-mono text-2xs text-fog uppercase tracking-widest mt-0.5">Duration</p>
+          </div>
+          <div className="px-5 py-4 text-center">
+            <p className="font-display font-bold text-2xl text-ink">{doneSets}<span className="text-sm font-sans text-fog ml-1">sets</span></p>
+            <p className="font-mono text-2xs text-fog uppercase tracking-widest mt-0.5">{totalSets > doneSets ? `${totalSets - doneSets} skipped` : 'All done'}</p>
+          </div>
+          <div className="px-5 py-4 text-center">
+            <p className="font-display font-bold text-2xl text-ink">{totalVolume > 0 ? (totalVolume >= 1000 ? `${(totalVolume / 1000).toFixed(1)}k` : totalVolume) : '—'}</p>
+            <p className="font-mono text-2xs text-fog uppercase tracking-widest mt-0.5">Volume</p>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Muscles worked */}
+          {muscleGroups.length > 0 && (
+            <div>
+              <p className="font-mono text-2xs tracking-widest uppercase text-fog mb-2">Muscles Worked</p>
+              <div className="flex flex-wrap gap-1.5">
+                {muscleGroups.map(g => <MuscleTag key={g} group={g} />)}
+              </div>
+            </div>
+          )}
+
+          {/* PRs */}
+          {prs.length > 0 && (
+            <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-sm">
+              <p className="font-mono text-2xs tracking-widest uppercase text-amber-600 mb-1.5">Personal Records</p>
+              <div className="flex flex-wrap gap-2">
+                {prs.map(ex => (
+                  <span key={ex.id} className="font-sans text-xs font-medium text-amber-700">
+                    ↑ {ex.name} — {maxW(ex)}{ex.sets[0]?.unit}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Effort rating */}
+          <div>
+            <p className="font-mono text-2xs tracking-widest uppercase text-fog mb-2">
+              Effort — <span className="text-ink normal-case">{effortLabels[effort]}</span>
+            </p>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setEffort(n)}
+                  className={cn(
+                    'flex-1 py-2.5 rounded-sm border font-mono text-sm font-bold transition-all duration-150',
+                    effort >= n
+                      ? 'bg-ink text-paper border-ink'
+                      : 'bg-transparent text-fog border-smoke hover:border-ash'
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <p className="font-mono text-2xs tracking-widest uppercase text-fog mb-2">Notes</p>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="How did it feel? Anything to remember..."
+              className="w-full font-sans text-sm bg-paper border border-smoke rounded-sm px-3 py-2.5 outline-none focus:border-ink transition-colors resize-none placeholder:text-fog"
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 pb-6 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 font-mono text-2xs tracking-widest uppercase text-fog border border-smoke rounded-sm hover:border-ink hover:text-ink transition-all"
+          >
+            Keep Going
+          </button>
+          <button
+            onClick={() => onConfirm(effort, notes)}
+            className="flex-1 py-3 font-mono text-2xs tracking-widest uppercase bg-ink text-paper rounded-sm hover:bg-ink-2 transition-all font-bold"
+          >
+            Save Workout
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// WORKOUT SAVED BANNER
+// ─────────────────────────────────────────────────────────────────
+
+function WorkoutSavedBanner({ log, onReopen }: { log: WorkoutLog; onReopen: () => void }) {
+  const totalVolume = log.exercises.reduce((s, ex) => s + totalVol(ex), 0)
+  const muscleGroups = [...new Set(log.exercises.map(ex => ex.muscleGroup))]
+  const effortLabels: Record<number, string> = { 1: 'Easy', 2: 'Moderate', 3: 'Good', 4: 'Hard', 5: 'Max effort' }
+
+  return (
+    <div className="px-14 py-8 max-w-3xl">
+      <div className="border border-success-border bg-success-bg rounded-sm px-6 py-5 mb-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-2xs tracking-widest uppercase text-success mb-1">✓ Workout Saved</p>
+            <p className="font-display font-bold text-lg text-ink">{log.name}</p>
+            <div className="flex items-center gap-3 mt-1.5">
+              <span className="font-mono text-2xs text-fog">{log.durationMins}m</span>
+              <span className="font-mono text-2xs text-fog">·</span>
+              <span className="font-mono text-2xs text-fog">{log.exercises.length} exercises</span>
+              {totalVolume > 0 && <>
+                <span className="font-mono text-2xs text-fog">·</span>
+                <span className="font-mono text-2xs text-fog">{totalVolume} vol</span>
+              </>}
+              {log.effort && <>
+                <span className="font-mono text-2xs text-fog">·</span>
+                <span className="font-mono text-2xs text-fog">{effortLabels[log.effort]}</span>
+              </>}
+            </div>
+            {muscleGroups.length > 0 && (
+              <div className="flex gap-1.5 mt-3 flex-wrap">
+                {muscleGroups.map(g => <MuscleTag key={g} group={g} />)}
+              </div>
+            )}
+            {log.notes && (
+              <p className="font-sans text-xs text-ash italic mt-3 leading-relaxed">{log.notes}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={onReopen}
+        className="font-mono text-2xs tracking-widest uppercase text-fog border border-smoke px-4 py-2.5 rounded-sm hover:border-ink hover:text-ink transition-all"
+      >
+        Edit Workout
+      </button>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────
 // MAIN WORKOUT PAGE
 // ─────────────────────────────────────────────────────────────────
@@ -572,6 +747,7 @@ export default function WorkoutPage() {
   const [logs, setLogsState] = useState<WorkoutLog[]>(() => loadLogs())
   const [view, setView] = useState<'log' | 'history'>('log')
   const [showPicker, setShowPicker] = useState(false)
+  const [showFinishModal, setShowFinishModal] = useState(false)
   const [workoutName, setWorkoutName] = useState('Morning Workout')
   const [startTime] = useState(Date.now())
 
@@ -589,12 +765,9 @@ export default function WorkoutPage() {
     [logs, today]
   )
 
-  // ── Same-day-last-week logic ──────────────────────────────────
-  // Walk back 6–8 days to find the closest matching weekday
   const lastWeekLog = useMemo(() => {
     const todayDate = new Date(today)
-    const todayWeekday = todayDate.getDay() // 0=Sun…6=Sat
-    // Look in a 14-day window for the same weekday
+    const todayWeekday = todayDate.getDay()
     for (let offset = 7; offset <= 14; offset++) {
       const candidate = daysAgo(offset)
       const candidateWeekday = new Date(candidate).getDay()
@@ -603,7 +776,6 @@ export default function WorkoutPage() {
         if (found && found.exercises.length > 0) return found
       }
     }
-    // Fallback: most recent workout within last 14 days
     for (let offset = 1; offset <= 14; offset++) {
       const candidate = daysAgo(offset)
       const found = logs.find(l => l.date === candidate)
@@ -612,10 +784,8 @@ export default function WorkoutPage() {
     return null
   }, [logs, today])
 
-  // ── Recent exercises ──────────────────────────────────────────
   const recentExercises = useMemo(() => getRecentExercises(logs, today), [logs, today])
 
-  // ── Previous performance lookup ───────────────────────────────
   function getLastLog(name: string): Exercise | null {
     for (const log of pastLogs) {
       const f = log.exercises.find(ex => ex.name.toLowerCase() === name.toLowerCase())
@@ -624,7 +794,6 @@ export default function WorkoutPage() {
     return null
   }
 
-  // ── Mutations ─────────────────────────────────────────────────
   function upsertToday(updated: WorkoutLog) {
     persistLogs(
       logs.some(l => l.date === today)
@@ -634,7 +803,6 @@ export default function WorkoutPage() {
   }
 
   function addExercise(def: ExerciseDef) {
-    // Don't double-add
     if (todayLog.exercises.some(e => e.name === def.name)) return
     const ex: Exercise = {
       id: Date.now().toString() + Math.random(),
@@ -647,7 +815,6 @@ export default function WorkoutPage() {
     setShowPicker(false)
   }
 
-  // Add from last week — carry over sets/reps/weight as starting point
   function addFromLastWeek(lastEx: Exercise) {
     if (todayLog.exercises.some(e => e.name === lastEx.name)) return
     const ex: Exercise = {
@@ -655,7 +822,6 @@ export default function WorkoutPage() {
       name: lastEx.name,
       muscleGroup: lastEx.muscleGroup,
       equipment: lastEx.sets[0] ? lastEx.muscleGroup : 'Other',
-      // Copy previous sets as starting templates (done=false so user confirms each)
       sets: lastEx.sets.map(s => ({ ...s, done: false })),
     }
     upsertToday({ ...todayLog, exercises: [...todayLog.exercises, ex] })
@@ -701,12 +867,36 @@ export default function WorkoutPage() {
     upsertToday({ ...todayLog, exercises: todayLog.exercises.filter(ex => ex.id !== exId) })
   }
 
-  const elapsed = Math.floor((Date.now() - startTime) / 60000)
+  // ── FINISH WORKOUT ────────────────────────────────────────────
+  function handleFinish(effort: number, notes: string) {
+    const durationMins = Math.max(1, Math.floor((Date.now() - startTime) / 60000))
+    const finished: WorkoutLog = {
+      ...todayLog,
+      durationMins,
+      effort,
+      notes,
+      completed: true,
+      completedAt: new Date().toISOString(),
+    }
+    persistLogs(
+      logs.some(l => l.date === today)
+        ? logs.map(l => l.date === today ? finished : l)
+        : [...logs, finished]
+    )
+    setShowFinishModal(false)
+  }
+
+  function handleReopen() {
+    // Mark as not completed so the log UI reappears
+    upsertToday({ ...todayLog, completed: false })
+  }
+
+  const elapsed = Math.max(1, Math.floor((Date.now() - startTime) / 60000))
   const todayExerciseNames = todayLog.exercises.map(e => e.name)
   const totalSetsLogged = todayLog.exercises.reduce((s, ex) => s + ex.sets.length, 0)
   const doneSets = todayLog.exercises.reduce((s, ex) => s + ex.sets.filter(set => set.done).length, 0)
+  const isCompleted = !!todayLog.completed
 
-  // ─────────────────────────────────────────────
   return (
     <div className="animate-fade-up flex flex-col min-h-screen">
       <PageHeader title="Workout" subtitle="Log Sets — Track Progress">
@@ -725,114 +915,105 @@ export default function WorkoutPage() {
 
       {/* ── TODAY LOG ─────────────────────────────── */}
       {view === 'log' && (
-        <div className="px-14 py-8 flex-1 max-w-3xl">
+        <>
+          {/* If workout is completed — show saved banner */}
+          {isCompleted ? (
+            <WorkoutSavedBanner log={todayLog} onReopen={handleReopen} />
+          ) : (
+            <div className="px-14 py-8 flex-1 max-w-3xl">
 
-          {/* Session bar */}
-          <div className="flex items-center gap-4 mb-7 px-5 py-3.5 bg-pure-white border border-paper-3 rounded-sm shadow-card">
-            <input
-              type="text"
-              value={workoutName}
-              onChange={e => { setWorkoutName(e.target.value); upsertToday({ ...todayLog, name: e.target.value }) }}
-              className="flex-1 font-display font-bold text-sm text-ink bg-transparent border-0 border-b border-smoke pb-1 outline-none focus:border-ink transition-colors"
-            />
-            <div className="flex items-center gap-4 flex-shrink-0">
-              {totalSetsLogged > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-16 h-1 bg-paper-3 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${(doneSets / totalSetsLogged) * 100}%`,
-                        background: progressHex(Math.round((doneSets / totalSetsLogged) * 100)),
-                      }}
-                    />
-                  </div>
-                  <span className="font-mono text-2xs text-fog">{doneSets}/{totalSetsLogged}</span>
+              {/* Session bar */}
+              <div className="flex items-center gap-4 mb-7 px-5 py-3.5 bg-pure-white border border-paper-3 rounded-sm shadow-card">
+                <input
+                  type="text"
+                  value={workoutName}
+                  onChange={e => { setWorkoutName(e.target.value); upsertToday({ ...todayLog, name: e.target.value }) }}
+                  className="flex-1 font-display font-bold text-sm text-ink bg-transparent border-0 border-b border-smoke pb-1 outline-none focus:border-ink transition-colors"
+                />
+                <div className="flex items-center gap-4 flex-shrink-0">
+                  {totalSetsLogged > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-16 h-1 bg-paper-3 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${(doneSets / totalSetsLogged) * 100}%`,
+                            background: progressHex(Math.round((doneSets / totalSetsLogged) * 100)),
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono text-2xs text-fog">{doneSets}/{totalSetsLogged}</span>
+                    </div>
+                  )}
+                  <span className="font-mono text-2xs text-fog">
+                    {elapsed}m · {todayLog.exercises.length} exercises
+                  </span>
+                </div>
+              </div>
+
+              {/* Last week suggestion */}
+              <LastWeekSuggestion
+                lastWeekLog={lastWeekLog}
+                todayExerciseNames={todayExerciseNames}
+                onAddAll={addAllFromLastWeek}
+                onAddOne={addFromLastWeek}
+              />
+
+              {/* Recent exercises */}
+              <RecentExercises
+                recents={recentExercises}
+                todayExerciseNames={todayExerciseNames}
+                onAdd={addExercise}
+              />
+
+              {/* Exercise cards */}
+              <div className="flex flex-col gap-4 mb-6">
+                {todayLog.exercises.map(ex => (
+                  <ExerciseCard
+                    key={ex.id}
+                    ex={ex}
+                    lastEx={getLastLog(ex.name)}
+                    onUpdateSet={(si, field, value) => updateSet(ex.id, si, field, value)}
+                    onAddSet={() => addSet(ex.id)}
+                    onRemoveSet={si => removeSet(ex.id, si)}
+                    onRemove={() => removeExercise(ex.id)}
+                  />
+                ))}
+              </div>
+
+              {/* Action row */}
+              <div className={cn(
+                'flex gap-3',
+                todayLog.exercises.length > 0 ? 'justify-between items-center' : 'justify-start'
+              )}>
+                <Button variant="outline" onClick={() => setShowPicker(true)}>
+                  + Add Exercise
+                </Button>
+
+                {todayLog.exercises.length > 0 && (
+                  <button
+                    onClick={() => setShowFinishModal(true)}
+                    className="px-6 py-3 bg-ink text-paper font-mono text-2xs tracking-widest uppercase rounded-sm hover:bg-ink-2 transition-all duration-150 font-bold"
+                  >
+                    Finish Workout
+                  </button>
+                )}
+              </div>
+
+              {/* Empty state */}
+              {todayLog.exercises.length === 0 && (
+                <div className="text-center py-20 border border-dashed border-smoke rounded-sm mt-6">
+                  <p className="font-display italic text-base text-fog mb-1">
+                    {lastWeekLog
+                      ? `Last ${new Date(lastWeekLog.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' })} you did ${lastWeekLog.exercises.length} exercises. Copy them above or add new ones.`
+                      : 'Add your first exercise to start logging.'}
+                  </p>
+                  <Button size="sm" onClick={() => setShowPicker(true)}>Browse Library</Button>
                 </div>
               )}
-              <span className="font-mono text-2xs text-fog">
-                {elapsed}m · {todayLog.exercises.length} exercises
-              </span>
-            </div>
-          </div>
-
-          {/* Last week suggestion */}
-          <LastWeekSuggestion
-            lastWeekLog={lastWeekLog}
-            todayExerciseNames={todayExerciseNames}
-            onAddAll={addAllFromLastWeek}
-            onAddOne={addFromLastWeek}
-          />
-
-          {/* Recent exercises quick-add */}
-          <RecentExercises
-            recents={recentExercises}
-            todayExerciseNames={todayExerciseNames}
-            onAdd={addExercise}
-          />
-
-          {/* Exercise cards */}
-          {todayLog.exercises.length > 0 && (
-            <div className="flex flex-col gap-4 mb-6">
-              {todayLog.exercises.map(ex => (
-                <ExerciseCard
-                  key={ex.id}
-                  ex={ex}
-                  lastEx={getLastLog(ex.name)}
-                  onUpdateSet={(si, field, val) => updateSet(ex.id, si, field, val)}
-                  onAddSet={() => addSet(ex.id)}
-                  onRemoveSet={si => removeSet(ex.id, si)}
-                  onRemove={() => removeExercise(ex.id)}
-                />
-              ))}
             </div>
           )}
-
-          {/* Add exercise panel */}
-          <Card className="mb-6">
-            <CardHeader className="flex flex-row items-center justify-between pb-0">
-              <CardTitle>Add Exercise</CardTitle>
-              <Button size="sm" onClick={() => setShowPicker(p => !p)}>
-                {showPicker ? 'Close' : '+ Exercise'}
-              </Button>
-            </CardHeader>
-            {showPicker && (
-              <CardContent className="pt-4">
-                <ExercisePicker
-                  onAdd={addExercise}
-                  alreadyAdded={todayExerciseNames}
-                />
-              </CardContent>
-            )}
-          </Card>
-
-          {/* Notes */}
-          {todayLog.exercises.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
-              <CardContent>
-                <textarea
-                  rows={2}
-                  defaultValue={todayLog.notes || ''}
-                  placeholder="How did it feel? PRs? Injuries? Recovery..."
-                  onBlur={e => upsertToday({ ...todayLog, notes: e.target.value })}
-                  className="w-full bg-transparent border-0 border-b border-smoke outline-none resize-none text-sm text-ink leading-[1.9] placeholder:text-fog focus:border-ink transition-colors"
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Empty state */}
-          {todayLog.exercises.length === 0 && !showPicker && (
-            <div className="text-center py-14 border border-dashed border-paper-3 rounded-sm mb-6">
-              <p className="font-display font-bold text-base text-fog mb-1">No exercises yet</p>
-              <p className="font-sans text-sm text-fog/70 mb-5">
-                {lastWeekLog ? `Last ${new Date(lastWeekLog.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' })} you did ${lastWeekLog.exercises.length} exercises. Copy them above or add new ones.` : 'Add your first exercise to start logging.'}
-              </p>
-              <Button size="sm" onClick={() => setShowPicker(true)}>Browse Library</Button>
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {/* ── HISTORY ────────────────────────────────── */}
@@ -846,14 +1027,24 @@ export default function WorkoutPage() {
                 const tSets = log.exercises.reduce((s, ex) => s + ex.sets.length, 0)
                 const tVol = log.exercises.reduce((s, ex) => s + totalVol(ex), 0)
                 const muscleGroups = [...new Set(log.exercises.map(ex => ex.muscleGroup))].slice(0, 4)
+                const effortLabels: Record<number, string> = { 1: 'Easy', 2: 'Moderate', 3: 'Good', 4: 'Hard', 5: 'Max effort' }
+
                 return (
                   <Card key={log.date} className="overflow-hidden p-0">
                     <div className="px-5 py-4 bg-paper border-b border-paper-3 flex items-start justify-between">
                       <div>
-                        <p className="font-display font-bold text-sm text-ink">{log.name || 'Workout'}</p>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-display font-bold text-sm text-ink">{log.name || 'Workout'}</p>
+                          {log.completed && (
+                            <span className="font-mono text-2xs px-1.5 py-0.5 bg-success-bg text-success border border-success-border rounded-sm">✓ Saved</span>
+                          )}
+                        </div>
                         <p className="font-mono text-2xs text-fog mt-0.5">
                           {new Date(log.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          {' · '}{log.exercises.length} exercises · {tSets} sets · {tVol > 0 ? `${tVol} vol` : '—'}
+                          {' · '}{log.exercises.length} exercises · {tSets} sets
+                          {tVol > 0 && ` · ${tVol} vol`}
+                          {log.durationMins && ` · ${log.durationMins}m`}
+                          {log.effort && ` · ${effortLabels[log.effort]}`}
                         </p>
                         <div className="flex gap-1.5 mt-2 flex-wrap">
                           {muscleGroups.map(g => <MuscleTag key={g} group={g} />)}
@@ -867,7 +1058,10 @@ export default function WorkoutPage() {
                             <p className="font-sans text-xs font-medium text-ink mb-1.5">{ex.name}</p>
                             <div className="flex gap-1.5 flex-wrap">
                               {ex.sets.map((set, si) => (
-                                <span key={si} className="font-mono text-2xs text-ash bg-paper border border-paper-3 px-2 py-0.5 rounded-sm">
+                                <span key={si} className={cn(
+                                  'font-mono text-2xs px-2 py-0.5 rounded-sm border',
+                                  set.done ? 'bg-ink/[0.04] border-ink/10 text-ink' : 'bg-paper border-paper-3 text-fog'
+                                )}>
                                   {set.weight > 0 ? `${set.weight}${set.unit}` : '—'} × {set.reps > 0 ? set.reps : '—'}
                                 </span>
                               ))}
@@ -891,6 +1085,24 @@ export default function WorkoutPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── MODALS ──────────────────────────────────── */}
+      {showPicker && (
+        <ExercisePicker
+          alreadyAdded={todayExerciseNames}
+          onAdd={addExercise}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {showFinishModal && (
+        <FinishWorkoutModal
+          log={todayLog}
+          durationMins={elapsed}
+          onConfirm={handleFinish}
+          onClose={() => setShowFinishModal(false)}
+        />
       )}
     </div>
   )
