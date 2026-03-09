@@ -742,7 +742,7 @@ function WorkoutSavedBanner({ log, onReopen }: { log: WorkoutLog; onReopen: () =
 // ─────────────────────────────────────────────────────────────────
 
 export default function WorkoutPage() {
-  const today = new Date().toISOString().split('T')[0]
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
 
   const [logs, setLogsState] = useState<WorkoutLog[]>(() => loadLogs())
   const [view, setView] = useState<'log' | 'history'>('log')
