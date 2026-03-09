@@ -1032,7 +1032,7 @@ export default function WorkoutPage() {
                 return (
                   <Card key={log.date} className="overflow-hidden p-0">
                     <div className="px-5 py-4 bg-paper border-b border-paper-3 flex items-start justify-between">
-                      <div>
+                      <div className="flex-1">
                         <div className="flex items-center gap-2 mb-0.5">
                           <p className="font-display font-bold text-sm text-ink">{log.name || 'Workout'}</p>
                           {log.completed && (
@@ -1050,6 +1050,16 @@ export default function WorkoutPage() {
                           {muscleGroups.map(g => <MuscleTag key={g} group={g} />)}
                         </div>
                       </div>
+                      <button
+                        onClick={() => {
+                          if (confirm('Delete this workout?')) {
+                            persistLogs(logs.filter(l => l.date !== log.date))
+                          }
+                        }}
+                        className="ml-4 flex-shrink-0 font-mono text-2xs text-fog hover:text-red-500 transition-colors px-2 py-1 border border-transparent hover:border-red-200 rounded-sm"
+                      >
+                        Delete
+                      </button>
                     </div>
                     <div className="px-5 py-3">
                       {log.exercises.map(ex => (
